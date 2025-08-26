@@ -23,6 +23,22 @@ x-healthcheck-celery-template: &celeryhealthcheck
     timeout: 30s
     retries: 3
 
+x-healthcheck-web-template: &webhealthcheck
+  healthcheck:
+    test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/", "||", "exit", "1"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 40s
+
+x-healthcheck-ui-template: &uihealthcheck
+  healthcheck:
+    test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/", "||", "exit", "1"]
+    interval: 30s
+    timeout: 10s
+    retries: 5
+    start_period: 60s
+
 services:
   # Common nginx and database
   nginx:
@@ -34,10 +50,16 @@ services:
       - nginx-shared-txs:/nginx-txs
       - nginx-shared-cfg:/nginx-cfg
     depends_on:
-      - txs-web
-      - cfg-web
-      - cgw-web
-      - events-web
+      txs-web:
+        condition: service_healthy
+      cfg-web:
+        condition: service_healthy
+      cgw-web:
+        condition: service_healthy
+      events-web:
+        condition: service_healthy
+      ui:
+        condition: service_healthy
 
   txs-db:
     image: postgres:14-alpine
@@ -127,6 +149,7 @@ services:
     volumes:
       - nginx-shared-txs:/nginx
     command: docker/web/run_web.sh
+    <<: *webhealthcheck
 
   txs-scheduler:
     <<: *txs-worker
@@ -150,6 +173,12 @@ services:
         condition: service_healthy
       cgw-db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8001/cfg/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Safe Client Gateway
   cgw-redis:
@@ -163,15 +192,20 @@ services:
     depends_on:
       cgw-redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   ui:
     image: safeglobal/safe-wallet-web:${UI_VERSION}
     env_file:
       - container_env_files/ui.env
-    depends_on:
-      - nginx
     expose:
       - 8080
+    <<: *uihealthcheck
 
   general-rabbitmq:
     image: rabbitmq:alpine
@@ -191,3 +225,9 @@ services:
         condition: service_healthy
       general-rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

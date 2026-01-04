@@ -55,7 +55,7 @@ services:
     image: nginx:alpine
     <<: *restart-policy
     ports:
-      - "${REVERSE_PROXY_PORT}:8000"
+      - "${REVERSE_PROXY_PORT:-8000}:8000"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx-shared-txs:/nginx-txs
@@ -126,7 +126,7 @@ services:
           memory: 128M
 
   txs-worker-indexer: &txs-worker
-    image: safeglobal/safe-transaction-service:${TXS_VERSION}
+    image: safeglobal/safe-transaction-service:${TXS_VERSION:-latest}
     <<: [*restart-policy, *celeryhealthcheck, *worker-resources]
     env_file:
       - container_env_files/txs.env
@@ -160,7 +160,7 @@ services:
         condition: service_healthy
 
   txs-web:
-    image: safeglobal/safe-transaction-service:${TXS_VERSION}
+    image: safeglobal/safe-transaction-service:${TXS_VERSION:-latest}
     <<: [*restart-policy, *service-resources]
     env_file:
       - container_env_files/txs.env
@@ -184,7 +184,7 @@ services:
     command: docker/web/celery/scheduler/run.sh
 
   cfg-web:
-    image: safeglobal/safe-config-service:${CFG_VERSION}
+    image: safeglobal/safe-config-service:${CFG_VERSION:-latest}
     <<: [*restart-policy, *service-resources]
     tty: true
     volumes:
@@ -208,7 +208,7 @@ services:
           memory: 128M
 
   cgw-web:
-    image: safeglobal/safe-client-gateway-nest:${CGW_VERSION}
+    image: safeglobal/safe-client-gateway-nest:${CGW_VERSION:-latest}
     <<: [*restart-policy, *service-resources]
     env_file:
       - container_env_files/cgw.env
@@ -219,7 +219,7 @@ services:
         condition: service_healthy
 
   ui:
-    image: safeglobal/safe-wallet-web:${UI_VERSION}
+    image: safeglobal/safe-wallet-web:${UI_VERSION:-latest}
     <<: *restart-policy
     deploy:
       resources:
@@ -251,7 +251,7 @@ services:
           memory: 128M
 
   events-web:
-    image: safeglobal/safe-events-service:${EVENTS_VERSION}
+    image: safeglobal/safe-events-service:${EVENTS_VERSION:-latest}
     <<: [*restart-policy, *service-resources]
     env_file:
       - container_env_files/events.env

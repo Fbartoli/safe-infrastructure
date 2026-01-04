@@ -25,3 +25,4 @@ You can change them to the version you are interested available in [docker-hub](
 
 - [Guide to run our services locally](running_locally.md)
 - [Guide to run our services for production](running_production.md)
+- [Guide to deploy with Coolify](running_coolify.md) (self-hosted PaaS with automatic SSL)

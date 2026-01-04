@@ -1,0 +1,457 @@
+volumes:
+  nginx-shared-txs:
+  nginx-shared-cfg:
+
+x-healthcheck-db-template: &pghealthcheck
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U postgres"]
+    interval: 30s
+    timeout: 30s
+    retries: 3
+    start_period: 40s
+
+x-healthcheck-redis-template: &redishealthcheck
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 30s
+    timeout: 30s
+    retries: 3
+    start_period: 10s
+
+x-healthcheck-celery-template: &celeryhealthcheck
+  healthcheck:
+    test: ["CMD", "celery", "inspect", "ping"]
+    interval: 30s
+    timeout: 30s
+    retries: 3
+    start_period: 60s
+
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+x-db-resources: &db-resources
+  deploy:
+    resources:
+      limits:
+        memory: 2G
+      reservations:
+        memory: 512M
+
+x-service-resources: &service-resources
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+      reservations:
+        memory: 256M
+
+x-worker-resources: &worker-resources
+  deploy:
+    resources:
+      limits:
+        memory: 2G
+      reservations:
+        memory: 512M
+
+services:
+  nginx:
+    image: nginx:alpine
+    <<: *restart-policy
+    ports:
+      - "${REVERSE_PROXY_PORT:-8000}:8000"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-shared-txs:/nginx-txs
+      - nginx-shared-cfg:/nginx-cfg
+    depends_on:
+      txs-web:
+        condition: service_started
+      cfg-web:
+        condition: service_started
+      cgw-web:
+        condition: service_started
+      events-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/cfg/api/v1/chains/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  txs-db:
+    image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
+    command: -c 'max_connections=250'
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data/txs-db:/var/lib/postgresql/data
+
+  cfg-db:
+    image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data/cfg-db:/var/lib/postgresql/data
+
+  events-db:
+    image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data/events-db:/var/lib/postgresql/data
+
+  cgw-db:
+    image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data/cgw-db:/var/lib/postgresql/data
+
+  txs-redis:
+    image: redis:alpine
+    <<: [*restart-policy, *redishealthcheck]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  txs-rabbitmq:
+    image: rabbitmq:alpine
+    <<: *restart-policy
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 15s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  txs-worker-indexer: &txs-worker
+    image: safeglobal/safe-transaction-service:${TXS_VERSION:-latest}
+    <<: [*restart-policy, *celeryhealthcheck, *worker-resources]
+    environment:
+      PYTHONPATH: /app/
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DEBUG: "0"
+      DATABASE_URL: psql://postgres:${POSTGRES_PASSWORD:-postgres}@txs-db:5432/postgres
+      ETH_L2_NETWORK: "1"
+      REDIS_URL: redis://txs-redis:6379/0
+      CELERY_BROKER_URL: amqp://guest:guest@txs-rabbitmq/
+      DJANGO_ALLOWED_HOSTS: "*"
+      FORCE_SCRIPT_NAME: /txs/
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+      EVENTS_QUEUE_URL: amqp://general-rabbitmq:5672
+      EVENTS_QUEUE_ASYNC_CONNECTION: "True"
+      EVENTS_QUEUE_EXCHANGE_NAME: safe-transaction-service-events
+      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-root}
+      DJANGO_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      DJANGO_SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@safe.local}
+      ETHEREUM_NODE_URL: ${RPC_NODE_URL}
+      RUN_MIGRATIONS: "1"
+      WORKER_QUEUES: default,indexing,processing
+    depends_on:
+      txs-db:
+        condition: service_healthy
+      txs-redis:
+        condition: service_healthy
+      txs-rabbitmq:
+        condition: service_healthy
+    command: docker/web/celery/worker/run.sh
+
+  txs-worker-contracts-tokens:
+    <<: *txs-worker
+    environment:
+      PYTHONPATH: /app/
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DEBUG: "0"
+      DATABASE_URL: psql://postgres:${POSTGRES_PASSWORD:-postgres}@txs-db:5432/postgres
+      ETH_L2_NETWORK: "1"
+      REDIS_URL: redis://txs-redis:6379/0
+      CELERY_BROKER_URL: amqp://guest:guest@txs-rabbitmq/
+      DJANGO_ALLOWED_HOSTS: "*"
+      FORCE_SCRIPT_NAME: /txs/
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+      EVENTS_QUEUE_URL: amqp://general-rabbitmq:5672
+      EVENTS_QUEUE_ASYNC_CONNECTION: "True"
+      EVENTS_QUEUE_EXCHANGE_NAME: safe-transaction-service-events
+      ETHEREUM_NODE_URL: ${RPC_NODE_URL}
+      WORKER_QUEUES: contracts,tokens
+    depends_on:
+      txs-worker-indexer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "inspect", "ping"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+
+  txs-worker-notifications-webhooks:
+    <<: *txs-worker
+    environment:
+      PYTHONPATH: /app/
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DEBUG: "0"
+      DATABASE_URL: psql://postgres:${POSTGRES_PASSWORD:-postgres}@txs-db:5432/postgres
+      ETH_L2_NETWORK: "1"
+      REDIS_URL: redis://txs-redis:6379/0
+      CELERY_BROKER_URL: amqp://guest:guest@txs-rabbitmq/
+      DJANGO_ALLOWED_HOSTS: "*"
+      FORCE_SCRIPT_NAME: /txs/
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+      EVENTS_QUEUE_URL: amqp://general-rabbitmq:5672
+      EVENTS_QUEUE_ASYNC_CONNECTION: "True"
+      EVENTS_QUEUE_EXCHANGE_NAME: safe-transaction-service-events
+      ETHEREUM_NODE_URL: ${RPC_NODE_URL}
+      WORKER_QUEUES: notifications,webhooks
+    depends_on:
+      txs-worker-indexer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "inspect", "ping"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+
+  txs-web:
+    image: safeglobal/safe-transaction-service:${TXS_VERSION:-latest}
+    <<: [*restart-policy, *service-resources]
+    environment:
+      PYTHONPATH: /app/
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DEBUG: "0"
+      DATABASE_URL: psql://postgres:${POSTGRES_PASSWORD:-postgres}@txs-db:5432/postgres
+      ETH_L2_NETWORK: "1"
+      REDIS_URL: redis://txs-redis:6379/0
+      CELERY_BROKER_URL: amqp://guest:guest@txs-rabbitmq/
+      DJANGO_ALLOWED_HOSTS: "*"
+      FORCE_SCRIPT_NAME: /txs/
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+      EVENTS_QUEUE_URL: amqp://general-rabbitmq:5672
+      EVENTS_QUEUE_ASYNC_CONNECTION: "True"
+      EVENTS_QUEUE_EXCHANGE_NAME: safe-transaction-service-events
+      ETHEREUM_NODE_URL: ${RPC_NODE_URL}
+    depends_on:
+      txs-worker-indexer:
+        condition: service_healthy
+    working_dir: /app
+    volumes:
+      - nginx-shared-txs:/nginx
+    command: docker/web/run_web.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/about/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  txs-scheduler:
+    <<: *txs-worker
+    depends_on:
+      txs-db:
+        condition: service_healthy
+      txs-redis:
+        condition: service_healthy
+      txs-rabbitmq:
+        condition: service_healthy
+    command: docker/web/celery/scheduler/run.sh
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "celery"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  cfg-web:
+    image: safeglobal/safe-config-service:${CFG_VERSION:-latest}
+    <<: [*restart-policy, *service-resources]
+    tty: true
+    volumes:
+      - nginx-shared-cfg:/nginx
+    environment:
+      PYTHONDONTWRITEBYTECODE: "true"
+      SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DEBUG: "false"
+      ROOT_LOG_LEVEL: INFO
+      DJANGO_ALLOWED_HOSTS: "*"
+      GUNICORN_BIND_PORT: "8001"
+      DOCKER_NGINX_VOLUME_ROOT: /nginx
+      GUNICORN_BIND_SOCKET: unix:/nginx/gunicorn.socket
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_NAME: postgres
+      POSTGRES_HOST: cfg-db
+      POSTGRES_PORT: "5432"
+      GUNICORN_WEB_RELOAD: "false"
+      DJANGO_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-root}
+      DJANGO_SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@safe.local}
+      DJANGO_OTP_ADMIN: "false"
+      DEFAULT_FILE_STORAGE: django.core.files.storage.FileSystemStorage
+      FORCE_SCRIPT_NAME: /cfg/
+      CGW_URL: http://nginx:8000/cgw
+      CGW_AUTH_TOKEN: ${CGW_AUTH_TOKEN}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000}
+      MEDIA_URL: ${MEDIA_URL:-http://localhost:8000/cfg/media/}
+    depends_on:
+      cfg-db:
+        condition: service_healthy
+      cgw-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/chains/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  cgw-redis:
+    image: redis:alpine
+    <<: [*restart-policy, *redishealthcheck]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  cgw-web:
+    image: safeglobal/safe-client-gateway-nest:${CGW_VERSION:-latest}
+    <<: [*restart-policy, *service-resources]
+    environment:
+      HTTP_CLIENT_REQUEST_TIMEOUT_MILLISECONDS: "60000"
+      SAFE_CONFIG_BASE_URI: http://nginx:8000/cfg
+      INFURA_API_KEY: ${INFURA_TOKEN:-}
+      REDIS_HOST: cgw-redis
+      AUTH_TOKEN: ${CGW_AUTH_TOKEN}
+      LOG_LEVEL: info
+      EMAIL_API_APPLICATION_CODE: ""
+      EMAIL_API_FROM_EMAIL: noreply@safe.local
+      EMAIL_API_KEY: ""
+      EMAIL_TEMPLATE_RECOVERY_TX: ""
+      EMAIL_TEMPLATE_UNKNOWN_RECOVERY_TX: ""
+      EMAIL_TEMPLATE_VERIFICATION_CODE: ""
+      PUSH_NOTIFICATIONS_API_PROJECT: ""
+      PUSH_NOTIFICATIONS_API_SERVICE_ACCOUNT_CLIENT_EMAIL: ""
+      PUSH_NOTIFICATIONS_API_SERVICE_ACCOUNT_PRIVATE_KEY: ""
+      RELAY_PROVIDER_API_KEY_OPTIMISM: ""
+      RELAY_PROVIDER_API_KEY_BSC: ""
+      RELAY_PROVIDER_API_KEY_GNOSIS_CHAIN: ""
+      RELAY_PROVIDER_API_KEY_POLYGON: ""
+      RELAY_PROVIDER_API_KEY_POLYGON_ZKEVM: ""
+      RELAY_PROVIDER_API_KEY_BASE: ""
+      RELAY_PROVIDER_API_KEY_ARBITRUM_ONE: ""
+      RELAY_PROVIDER_API_KEY_AVALANCHE: ""
+      RELAY_PROVIDER_API_KEY_LINEA: ""
+      RELAY_PROVIDER_API_KEY_BLAST: ""
+      RELAY_PROVIDER_API_KEY_SEPOLIA: ""
+      STAKING_API_KEY: ""
+      BRIDGE_API_KEY: ""
+      STAKING_TESTNET_API_KEY: ""
+      JWT_ISSUER: ""
+      JWT_SECRET: ""
+      FINGERPRINT_ENCRYPTION_KEY: ""
+      POSTGRES_HOST: cgw-db
+      POSTGRES_DB: postgres
+    depends_on:
+      cgw-redis:
+        condition: service_healthy
+      cgw-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  ui:
+    image: safeglobal/safe-wallet-web:${UI_VERSION:-latest}
+    <<: [*restart-policy, *service-resources]
+    environment:
+      NEXT_PUBLIC_INFURA_TOKEN: ${INFURA_TOKEN:-}
+      NEXT_PUBLIC_GATEWAY_URL_PRODUCTION: ${PUBLIC_URL:-http://localhost:8000}/cgw
+      NEXT_PUBLIC_SAFE_APPS_INFURA_TOKEN: ${INFURA_TOKEN:-}
+      NEXT_PUBLIC_TENDERLY_SIMULATE_ENDPOINT_URL: ${TENDERLY_SIMULATE_URL:-}
+      NEXT_PUBLIC_TENDERLY_PROJECT_NAME: ${TENDERLY_PROJECT:-}
+      NEXT_PUBLIC_TENDERLY_ORG_NAME: ${TENDERLY_ORG:-}
+      NEXT_PUBLIC_IS_PRODUCTION: "true"
+      NEXT_PUBLIC_SAFE_VERSION: "1.4.1"
+      NEXT_PUBLIC_SENTRY_DSN: ""
+      NEXT_PUBLIC_BEAMER_ID: ""
+      NEXT_PUBLIC_WC_BRIDGE: ""
+      NEXT_PUBLIC_FORTMATIC_KEY: ""
+      NEXT_PUBLIC_PORTIS_KEY: ""
+      NEXT_PUBLIC_CYPRESS_MNEMONIC: ""
+    expose:
+      - 8080
+
+  general-rabbitmq:
+    image: rabbitmq:alpine
+    <<: *restart-policy
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 15s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  events-web:
+    image: safeglobal/safe-events-service:${EVENTS_VERSION:-latest}
+    <<: [*restart-policy, *service-resources]
+    environment:
+      DATABASE_URL: psql://postgres:${POSTGRES_PASSWORD:-postgres}@events-db:5432/postgres
+      AMQP_URL: amqp://general-rabbitmq:5672
+      AMQP_EXCHANGE: safe-transaction-service-events
+      AMQP_QUEUE: safe-events-service
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@safe.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      WEBHOOKS_CACHE_TTL: "300000"
+      NODE_ENV: production
+      URL_BASE_PATH: /events
+    depends_on:
+      events-db:
+        condition: service_healthy
+      general-rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+

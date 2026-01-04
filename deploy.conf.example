@@ -1,0 +1,50 @@
+# Safe Infrastructure Deployment Configuration
+# Copy this file to deploy.conf and edit the values below.
+
+# =============================================================================
+# NETWORK CONFIGURATION
+# =============================================================================
+
+# Domain where the services will be accessible (use localhost for local dev)
+DOMAIN=localhost
+
+# Port for the reverse proxy (nginx)
+PORT=8000
+
+# =============================================================================
+# BLOCKCHAIN CONFIGURATION
+# =============================================================================
+
+# RPC endpoint for the primary chain
+# This is used by the Transaction Service to index Safe transactions
+RPC_NODE_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
+
+# Chain ID for the primary chain (1=Mainnet, 137=Polygon, 100=Gnosis, etc.)
+CHAIN_ID=1
+
+# Chain name (displayed in the UI)
+CHAIN_NAME="Ethereum Mainnet"
+
+# =============================================================================
+# SERVICE VERSIONS
+# =============================================================================
+
+# Pin specific versions for production stability, or use 'latest' for development
+CFG_VERSION=latest
+CGW_VERSION=latest
+TXS_VERSION=latest
+UI_VERSION=latest
+EVENTS_VERSION=latest
+
+# =============================================================================
+# OPTIONAL: EXTERNAL SERVICES
+# =============================================================================
+
+# Infura token for the Web UI (can be same as RPC or different)
+INFURA_TOKEN=
+
+# Tenderly integration for transaction simulation (optional)
+TENDERLY_ORG=
+TENDERLY_PROJECT=
+TENDERLY_SIMULATE_URL=
+

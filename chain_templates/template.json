@@ -1,0 +1,50 @@
+{
+  "chainId": "CHAIN_ID",
+  "chainName": "CHAIN_NAME",
+  "shortName": "SHORT_NAME",
+  "description": "Chain description",
+  "chainLogoUri": "",
+  "l2": true,
+  "isTestnet": false,
+  "rpcUri": {
+    "authentication": "NO_AUTHENTICATION",
+    "value": "RPC_URL"
+  },
+  "safeAppsRpcUri": {
+    "authentication": "NO_AUTHENTICATION",
+    "value": "RPC_URL"
+  },
+  "publicRpcUri": {
+    "authentication": "NO_AUTHENTICATION",
+    "value": "RPC_URL"
+  },
+  "blockExplorerUriTemplate": {
+    "address": "EXPLORER_URL/address/{{address}}",
+    "txHash": "EXPLORER_URL/tx/{{txHash}}",
+    "api": "EXPLORER_API_URL/api?module={{module}}&action={{action}}&address={{address}}&apiKey={{apiKey}}"
+  },
+  "nativeCurrency": {
+    "name": "CURRENCY_NAME",
+    "symbol": "SYMBOL",
+    "decimals": 18,
+    "logoUri": ""
+  },
+  "transactionService": "http://nginx:8000/txs",
+  "vpcTransactionService": "http://nginx:8000/txs",
+  "theme": {
+    "textColor": "#ffffff",
+    "backgroundColor": "#000000"
+  },
+  "gasPrice": [],
+  "ensRegistryAddress": null,
+  "disabledWallets": [],
+  "features": [
+    "CONTRACT_INTERACTION",
+    "ERC721",
+    "SAFE_APPS",
+    "SAFE_TX_GAS_OPTIONAL",
+    "SPENDING_LIMIT"
+  ],
+  "recommendedMasterCopyVersion": "1.3.0"
+}
+

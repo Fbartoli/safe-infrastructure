@@ -1,0 +1,51 @@
+{
+  "chainId": "100",
+  "chainName": "Gnosis Chain",
+  "shortName": "gno",
+  "description": "Gnosis Chain (formerly xDai)",
+  "chainLogoUri": "https://safe-transaction-assets.safe.global/chains/100/chain_logo.png",
+  "l2": true,
+  "isTestnet": false,
+  "rpcUri": {
+    "authentication": "NO_AUTHENTICATION",
+    "value": "https://rpc.gnosischain.com"
+  },
+  "safeAppsRpcUri": {
+    "authentication": "NO_AUTHENTICATION",
+    "value": "https://rpc.gnosischain.com"
+  },
+  "publicRpcUri": {
+    "authentication": "NO_AUTHENTICATION",
+    "value": "https://rpc.gnosischain.com"
+  },
+  "blockExplorerUriTemplate": {
+    "address": "https://gnosisscan.io/address/{{address}}",
+    "txHash": "https://gnosisscan.io/tx/{{txHash}}",
+    "api": "https://api.gnosisscan.io/api?module={{module}}&action={{action}}&address={{address}}&apiKey={{apiKey}}"
+  },
+  "nativeCurrency": {
+    "name": "xDai",
+    "symbol": "XDAI",
+    "decimals": 18,
+    "logoUri": "https://safe-transaction-assets.safe.global/chains/100/currency_logo.png"
+  },
+  "transactionService": "http://nginx:8000/txs",
+  "vpcTransactionService": "http://nginx:8000/txs",
+  "theme": {
+    "textColor": "#ffffff",
+    "backgroundColor": "#48A9A6"
+  },
+  "gasPrice": [],
+  "ensRegistryAddress": null,
+  "disabledWallets": [],
+  "features": [
+    "CONTRACT_INTERACTION",
+    "ERC721",
+    "SAFE_APPS",
+    "SAFE_TX_GAS_OPTIONAL",
+    "SPENDING_LIMIT",
+    "TX_SIMULATION"
+  ],
+  "recommendedMasterCopyVersion": "1.3.0"
+}
+

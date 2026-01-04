@@ -23,10 +23,37 @@ x-healthcheck-celery-template: &celeryhealthcheck
     timeout: 30s
     retries: 3
 
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+x-db-resources: &db-resources
+  deploy:
+    resources:
+      limits:
+        memory: 2G
+      reservations:
+        memory: 512M
+
+x-service-resources: &service-resources
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+      reservations:
+        memory: 256M
+
+x-worker-resources: &worker-resources
+  deploy:
+    resources:
+      limits:
+        memory: 2G
+      reservations:
+        memory: 512M
+
 services:
-  # Common nginx and database
   nginx:
     image: nginx:alpine
+    <<: *restart-policy
     ports:
       - "${REVERSE_PROXY_PORT}:8000"
     volumes:
@@ -38,50 +65,69 @@ services:
       - cfg-web
       - cgw-web
       - events-web
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
 
   txs-db:
     image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
     command: -c 'max_connections=250'
     environment:
       POSTGRES_PASSWORD: postgres
     volumes:
       - ./data/txs-db:/var/lib/postgresql/data
-    <<: *pghealthcheck
 
   cfg-db:
     image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
     environment:
       POSTGRES_PASSWORD: postgres
     volumes:
       - ./data/cfg-db:/var/lib/postgresql/data
-    <<: *pghealthcheck
 
   events-db:
     image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
     environment:
       POSTGRES_PASSWORD: postgres
     volumes:
       - ./data/events-db:/var/lib/postgresql/data
-    <<: *pghealthcheck
 
   cgw-db:
     image: postgres:14-alpine
+    <<: [*restart-policy, *pghealthcheck, *db-resources]
     environment:
       POSTGRES_PASSWORD: postgres
     volumes:
       - ./data/cgw-db:/var/lib/postgresql/data
-    <<: *pghealthcheck
 
-  # Safe Transaction Service
   txs-redis:
     image: redis:alpine
-    <<: *redishealthcheck
+    <<: [*restart-policy, *redishealthcheck]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
   txs-rabbitmq:
     image: rabbitmq:alpine
+    <<: *restart-policy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
   txs-worker-indexer: &txs-worker
     image: safeglobal/safe-transaction-service:${TXS_VERSION}
+    <<: [*restart-policy, *celeryhealthcheck, *worker-resources]
     env_file:
       - container_env_files/txs.env
     environment:
@@ -94,7 +140,6 @@ services:
       txs-redis:
         condition: service_healthy
     command: docker/web/celery/worker/run.sh
-    <<: *celeryhealthcheck
 
   txs-worker-contracts-tokens:
     <<: *txs-worker
@@ -116,6 +161,7 @@ services:
 
   txs-web:
     image: safeglobal/safe-transaction-service:${TXS_VERSION}
+    <<: [*restart-policy, *service-resources]
     env_file:
       - container_env_files/txs.env
     environment:
@@ -137,9 +183,9 @@ services:
         condition: service_healthy
     command: docker/web/celery/scheduler/run.sh
 
-  # Safe Config Service
   cfg-web:
     image: safeglobal/safe-config-service:${CFG_VERSION}
+    <<: [*restart-policy, *service-resources]
     tty: true
     volumes:
       - nginx-shared-cfg:/nginx
@@ -151,13 +197,19 @@ services:
       cgw-db:
         condition: service_healthy
 
-  # Safe Client Gateway
   cgw-redis:
     image: redis:alpine
-    <<: *redishealthcheck
+    <<: [*restart-policy, *redishealthcheck]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
   cgw-web:
     image: safeglobal/safe-client-gateway-nest:${CGW_VERSION}
+    <<: [*restart-policy, *service-resources]
     env_file:
       - container_env_files/cgw.env
     depends_on:
@@ -166,6 +218,7 @@ services:
 
   ui:
     image: safeglobal/safe-wallet-web:${UI_VERSION}
+    <<: [*restart-policy, *service-resources]
     env_file:
       - container_env_files/ui.env
     depends_on:
@@ -175,15 +228,23 @@ services:
 
   general-rabbitmq:
     image: rabbitmq:alpine
+    <<: *restart-policy
     healthcheck:
       test: rabbitmq-diagnostics -q ping
       interval: 15s
       timeout: 30s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
   events-web:
     image: safeglobal/safe-events-service:${EVENTS_VERSION}
+    <<: [*restart-policy, *service-resources]
     env_file:
       - container_env_files/events.env
     depends_on:

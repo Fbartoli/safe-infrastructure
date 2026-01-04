@@ -2,3 +2,6 @@
 .DS_Store
 .idea/
 data/
+.credentials
+.chain_*.json
+deploy.conf

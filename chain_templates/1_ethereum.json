@@ -1,0 +1,53 @@
+{
+  "chainId": "1",
+  "chainName": "Ethereum Mainnet",
+  "shortName": "eth",
+  "description": "Ethereum Mainnet",
+  "chainLogoUri": "https://safe-transaction-assets.safe.global/chains/1/chain_logo.png",
+  "l2": false,
+  "isTestnet": false,
+  "rpcUri": {
+    "authentication": "API_KEY_PATH",
+    "value": "https://mainnet.infura.io/v3/"
+  },
+  "safeAppsRpcUri": {
+    "authentication": "API_KEY_PATH",
+    "value": "https://mainnet.infura.io/v3/"
+  },
+  "publicRpcUri": {
+    "authentication": "NO_AUTHENTICATION",
+    "value": "https://eth.llamarpc.com"
+  },
+  "blockExplorerUriTemplate": {
+    "address": "https://etherscan.io/address/{{address}}",
+    "txHash": "https://etherscan.io/tx/{{txHash}}",
+    "api": "https://api.etherscan.io/api?module={{module}}&action={{action}}&address={{address}}&apiKey={{apiKey}}"
+  },
+  "nativeCurrency": {
+    "name": "Ether",
+    "symbol": "ETH",
+    "decimals": 18,
+    "logoUri": "https://safe-transaction-assets.safe.global/chains/1/currency_logo.png"
+  },
+  "transactionService": "http://nginx:8000/txs",
+  "vpcTransactionService": "http://nginx:8000/txs",
+  "theme": {
+    "textColor": "#001428",
+    "backgroundColor": "#DDDDDD"
+  },
+  "gasPrice": [],
+  "ensRegistryAddress": "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e",
+  "disabledWallets": [],
+  "features": [
+    "CONTRACT_INTERACTION",
+    "DOMAIN_LOOKUP",
+    "EIP1559",
+    "ERC721",
+    "SAFE_APPS",
+    "SAFE_TX_GAS_OPTIONAL",
+    "SPENDING_LIMIT",
+    "TX_SIMULATION"
+  ],
+  "recommendedMasterCopyVersion": "1.3.0"
+}
+

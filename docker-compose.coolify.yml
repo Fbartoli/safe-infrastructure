@@ -53,6 +53,14 @@ x-worker-resources: &worker-resources
       reservations:
         memory: 512M
 
+x-ui-resources: &ui-resources
+  deploy:
+    resources:
+      limits:
+        memory: 4G
+      reservations:
+        memory: 1G
+
 x-txs-env: &txs-env
   PYTHONPATH: /app/
   DJANGO_SETTINGS_MODULE: config.settings.production
@@ -69,6 +77,53 @@ x-txs-env: &txs-env
   EVENTS_QUEUE_ASYNC_CONNECTION: "True"
   EVENTS_QUEUE_EXCHANGE_NAME: safe-transaction-service-events
   ETHEREUM_NODE_URL: ${RPC_NODE_URL:?RPC_NODE_URL is required}
+
+x-cgw-env: &cgw-env
+  HTTP_CLIENT_REQUEST_TIMEOUT_MILLISECONDS: "60000"
+  SAFE_CONFIG_BASE_URI: http://nginx:8000/cfg
+  INFURA_API_KEY: ${INFURA_TOKEN:-}
+  REDIS_HOST: cgw-redis
+  AUTH_TOKEN: ${CGW_AUTH_TOKEN:?CGW_AUTH_TOKEN is required}
+  LOG_LEVEL: info
+  EMAIL_API_APPLICATION_CODE: ""
+  EMAIL_API_FROM_EMAIL: noreply@safe.local
+  EMAIL_API_KEY: ""
+  EMAIL_TEMPLATE_RECOVERY_TX: ""
+  EMAIL_TEMPLATE_UNKNOWN_RECOVERY_TX: ""
+  EMAIL_TEMPLATE_VERIFICATION_CODE: ""
+  PUSH_NOTIFICATIONS_API_PROJECT: ""
+  PUSH_NOTIFICATIONS_API_SERVICE_ACCOUNT_CLIENT_EMAIL: "disabled@safe.local"
+  PUSH_NOTIFICATIONS_API_SERVICE_ACCOUNT_PRIVATE_KEY: ""
+  RELAY_PROVIDER_API_KEY_OPTIMISM: ""
+  RELAY_PROVIDER_API_KEY_BSC: ""
+  RELAY_PROVIDER_API_KEY_GNOSIS_CHAIN: ""
+  RELAY_PROVIDER_API_KEY_POLYGON: ""
+  RELAY_PROVIDER_API_KEY_POLYGON_ZKEVM: ""
+  RELAY_PROVIDER_API_KEY_BASE: ""
+  RELAY_PROVIDER_API_KEY_ARBITRUM_ONE: ""
+  RELAY_PROVIDER_API_KEY_AVALANCHE: ""
+  RELAY_PROVIDER_API_KEY_LINEA: ""
+  RELAY_PROVIDER_API_KEY_BLAST: ""
+  RELAY_PROVIDER_API_KEY_SEPOLIA: ""
+  STAKING_API_KEY: ""
+  BRIDGE_API_KEY: ""
+  STAKING_TESTNET_API_KEY: ""
+  JWT_ISSUER: ""
+  JWT_SECRET: ""
+  FINGERPRINT_ENCRYPTION_KEY: ""
+  POSTGRES_HOST: cgw-db
+  POSTGRES_DB: postgres
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  APPLICATION_ENV: production
+  TARGETED_MESSAGING_FILE_STORAGE_TYPE: local
+  AWS_ACCESS_KEY_ID: disabled
+  AWS_SECRET_ACCESS_KEY: disabled
+  AWS_STORAGE_BUCKET_NAME: disabled
+  CSV_EXPORT_FILE_STORAGE_TYPE: local
+  CSV_AWS_ACCESS_KEY_ID: disabled
+  CSV_AWS_SECRET_ACCESS_KEY: disabled
+  CSV_AWS_STORAGE_BUCKET_NAME: disabled
 
 services:
   nginx:
@@ -99,8 +154,8 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/cfg/api/v1/chains/"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
     labels:
       - "coolify.managed=true"
       - "coolify.proxyType=traefik"
@@ -173,7 +228,7 @@ services:
     <<: [*restart-policy, *celeryhealthcheck, *worker-resources]
     environment:
       <<: *txs-env
-      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-root}
+      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-admin}
       DJANGO_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-admin}
       DJANGO_SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@safe.local}
       RUN_MIGRATIONS: "1"
@@ -237,15 +292,15 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/about/"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   txs-scheduler:
     image: safeglobal/safe-transaction-service:${TXS_VERSION:-latest}
     <<: [*restart-policy, *worker-resources]
     environment:
       <<: *txs-env
-      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-root}
+      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-admin}
       DJANGO_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-admin}
       DJANGO_SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@safe.local}
       RUN_MIGRATIONS: "1"
@@ -262,8 +317,8 @@ services:
       test: ["CMD", "pgrep", "-f", "celery"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   cfg-web:
     image: safeglobal/safe-config-service:${CFG_VERSION:-latest}
@@ -288,7 +343,7 @@ services:
       POSTGRES_PORT: "5432"
       GUNICORN_WEB_RELOAD: "false"
       DJANGO_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-admin}
-      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-root}
+      DJANGO_SUPERUSER_USERNAME: ${ADMIN_USERNAME:-admin}
       DJANGO_SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@safe.local}
       DJANGO_OTP_ADMIN: "false"
       DEFAULT_FILE_STORAGE: django.core.files.storage.FileSystemStorage
@@ -306,8 +361,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/chains/"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 90s
 
   cgw-redis:
     image: redis:alpine
@@ -323,55 +378,22 @@ services:
     image: safeglobal/safe-client-gateway-nest:${CGW_VERSION:-latest}
     <<: [*restart-policy, *service-resources]
     environment:
-      HTTP_CLIENT_REQUEST_TIMEOUT_MILLISECONDS: "60000"
-      SAFE_CONFIG_BASE_URI: http://nginx:8000/cfg
-      INFURA_API_KEY: ${INFURA_TOKEN:-}
-      REDIS_HOST: cgw-redis
-      AUTH_TOKEN: ${CGW_AUTH_TOKEN:?CGW_AUTH_TOKEN is required}
-      LOG_LEVEL: info
-      EMAIL_API_APPLICATION_CODE: ""
-      EMAIL_API_FROM_EMAIL: noreply@safe.local
-      EMAIL_API_KEY: ""
-      EMAIL_TEMPLATE_RECOVERY_TX: ""
-      EMAIL_TEMPLATE_UNKNOWN_RECOVERY_TX: ""
-      EMAIL_TEMPLATE_VERIFICATION_CODE: ""
-      PUSH_NOTIFICATIONS_API_PROJECT: ""
-      PUSH_NOTIFICATIONS_API_SERVICE_ACCOUNT_CLIENT_EMAIL: ""
-      PUSH_NOTIFICATIONS_API_SERVICE_ACCOUNT_PRIVATE_KEY: ""
-      RELAY_PROVIDER_API_KEY_OPTIMISM: ""
-      RELAY_PROVIDER_API_KEY_BSC: ""
-      RELAY_PROVIDER_API_KEY_GNOSIS_CHAIN: ""
-      RELAY_PROVIDER_API_KEY_POLYGON: ""
-      RELAY_PROVIDER_API_KEY_POLYGON_ZKEVM: ""
-      RELAY_PROVIDER_API_KEY_BASE: ""
-      RELAY_PROVIDER_API_KEY_ARBITRUM_ONE: ""
-      RELAY_PROVIDER_API_KEY_AVALANCHE: ""
-      RELAY_PROVIDER_API_KEY_LINEA: ""
-      RELAY_PROVIDER_API_KEY_BLAST: ""
-      RELAY_PROVIDER_API_KEY_SEPOLIA: ""
-      STAKING_API_KEY: ""
-      BRIDGE_API_KEY: ""
-      STAKING_TESTNET_API_KEY: ""
-      JWT_ISSUER: ""
-      JWT_SECRET: ""
-      FINGERPRINT_ENCRYPTION_KEY: ""
-      POSTGRES_HOST: cgw-db
-      POSTGRES_DB: postgres
+      <<: *cgw-env
     depends_on:
       cgw-redis:
         condition: service_healthy
       cgw-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/v1/chains/"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   ui:
     image: safeglobal/safe-wallet-web:${UI_VERSION:-latest}
-    <<: [*restart-policy, *service-resources]
+    <<: [*restart-policy, *ui-resources]
     environment:
       NEXT_PUBLIC_INFURA_TOKEN: ${INFURA_TOKEN:-}
       NEXT_PUBLIC_GATEWAY_URL_PRODUCTION: ${PUBLIC_URL:-http://localhost:8000}/cgw
@@ -389,6 +411,12 @@ services:
       NEXT_PUBLIC_CYPRESS_MNEMONIC: ""
     expose:
       - 8080
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
 
   general-rabbitmq:
     image: rabbitmq:alpine
@@ -428,5 +456,5 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s

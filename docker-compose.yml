@@ -215,10 +215,18 @@ services:
     depends_on:
       cgw-redis:
         condition: service_healthy
+      cgw-db:
+        condition: service_healthy
 
   ui:
     image: safeglobal/safe-wallet-web:${UI_VERSION}
-    <<: [*restart-policy, *service-resources]
+    <<: *restart-policy
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
     env_file:
       - container_env_files/ui.env
     depends_on:
